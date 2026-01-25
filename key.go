@@ -212,9 +212,9 @@ func (pk *ECDSAPrivateKey) Private() crypto.PrivateKey {
 	return &ecdsa.PrivateKey{
 		D: D.Set(pk.priv.D),
 		PublicKey: ecdsa.PublicKey{
-			Curve: pk.priv.PublicKey.Curve,
-			X:     X.Set(pk.priv.PublicKey.X),
-			Y:     Y.Set(pk.priv.PublicKey.Y),
+			Curve: pk.priv.Curve,
+			X:     X.Set(pk.priv.X),
+			Y:     Y.Set(pk.priv.Y),
 		},
 	}
 }
@@ -223,9 +223,9 @@ func (pk *ECDSAPrivateKey) Private() crypto.PrivateKey {
 func (pk *ECDSAPrivateKey) Public() crypto.PublicKey {
 	var X, Y big.Int
 	return &ecdsa.PublicKey{
-		Curve: pk.priv.PublicKey.Curve,
-		X:     X.Set(pk.priv.PublicKey.X),
-		Y:     Y.Set(pk.priv.PublicKey.Y),
+		Curve: pk.priv.Curve,
+		X:     X.Set(pk.priv.X),
+		Y:     Y.Set(pk.priv.Y),
 	}
 }
 
@@ -305,7 +305,7 @@ func (pk *ECDSAPrivateKey) String() string {
 	return "k2:" + base64.RawURLEncoding.EncodeToString(priv)
 }
 
-// GenerateKey generates a random RSA private key of the given bit size.
+// GenerateKeyRSA generates a random RSA private key of the given bit size.
 //
 // If bits is less than 1024, [GenerateKeyRSA] returns an error. See the
 // "[Minimum key size]" section for further details.
@@ -539,8 +539,8 @@ func rsaIdentity(key *rsa.PrivateKey) (Identity, error) {
 		E int
 	}
 	pubKey, err := asn1.Marshal(PKCS1{
-		N: key.PublicKey.N,
-		E: key.PublicKey.E,
+		N: key.N,
+		E: key.E,
 	})
 	if err != nil {
 		return Identity{}, fmt.Errorf("mtls: failed to encode RSA public key: %w", err)
