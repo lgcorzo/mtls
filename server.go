@@ -21,8 +21,8 @@ type Server struct {
 	// the PrivateKey's public key identity as server name (SNI).
 	//
 	// Clients have to know the corresponding public key identity to
-	// verify the client.
-	PrivateKey PrivateKey
+	// verify the server.
+	PrivateKey Signer
 
 	// PeerIdentities contains a static list of accepted peers. If set,
 	// the server only accepts an incoming TLS connection from peers

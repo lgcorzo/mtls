@@ -28,7 +28,7 @@ type Client struct {
 	//
 	// The server has to know the corresponding public key
 	// identity to verify the client.
-	PrivateKey PrivateKey
+	PrivateKey Signer
 
 	// PeerIdentities contains a static mapping from network
 	// addresses to identities. When establishing a connection
