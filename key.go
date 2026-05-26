@@ -40,117 +40,139 @@ type Signer interface {
 	Identity() Identity
 }
 
-// PrivateKey is a [Signer] with a directly accessible private key.
-type PrivateKey interface {
-	Signer
-
-	// Private returns the underlying cryptographic private key.
-	Private() crypto.PrivateKey
-
-	// String returns the string representation of the private key.
-	String() string
+// ParsePrivateKey parses s and returns it as [PrivateKey].
+func ParsePrivateKey(s string) (*PrivateKey, error) {
+	var pk PrivateKey
+	if err := pk.UnmarshalText([]byte(s)); err != nil {
+		return nil, err
+	}
+	return &pk, nil
 }
 
-// ParsePrivateKey parses s and returns it as PrivateKey.
+// NewPrivateKey returns a new [PrivateKey] wrapping the given private key.
 //
-// Currently, ParsePrivateKey either returns a [*EdDSAPrivateKey],
-// a [*ECDSAPrivateKey], a [*RSAPrivateKey] or an error.
-func ParsePrivateKey(s string) (PrivateKey, error) {
-	if len(s) >= 3 {
-		switch s[:3] {
-		case "k1:":
-			var key EdDSAPrivateKey
-			if err := key.UnmarshalText([]byte(s)); err != nil {
-				return nil, err
-			}
-			return &key, nil
+// Currently supported types are [ed25519.PrivateKey], [*ecdsa.PrivateKey]
+// and [*rsa.PrivateKey].
+func NewPrivateKey(priv crypto.PrivateKey) (*PrivateKey, error) {
+	var (
+		signer   crypto.Signer
+		identity Identity
+		err      error
+	)
 
-		case "k2:":
-			var key ECDSAPrivateKey
-			if err := key.UnmarshalText([]byte(s)); err != nil {
-				return nil, err
-			}
-			return &key, nil
-
-		case "k3:":
-			var key RSAPrivateKey
-			if err := key.UnmarshalText([]byte(s)); err != nil {
-				return nil, err
-			}
-			return &key, nil
+	switch priv := priv.(type) {
+	case ed25519.PrivateKey:
+		pub := append(make(ed25519.PublicKey, 0, ed25519.PublicKeySize), priv[32:]...)
+		if identity, err = ed25519Identity(pub); err != nil {
+			return nil, err
 		}
-	}
-	return nil, errors.New("mtls: invalid private key")
-}
+		signer = priv
 
-// EdDSAPrivateKey is a [PrivateKey] for the EdDSA signature algorithm
-// as specified in RFC 8032.
-type EdDSAPrivateKey struct {
-	priv     ed25519.PrivateKey
-	identity Identity
-}
+	case *ecdsa.PrivateKey:
+		if identity, err = ecdsaIdentity(priv); err != nil {
+			return nil, err
+		}
+		signer = priv
 
-// GenerateKeyEdDSA generates a new [EdDSAPrivateKey] using entropy
-// from random. If random is nil, [crypto/rand.Reader] will be used.
-func GenerateKeyEdDSA(random io.Reader) (*EdDSAPrivateKey, error) {
-	if random == nil {
-		random = rand.Reader
-	}
-	pub, priv, err := ed25519.GenerateKey(random)
-	if err != nil {
-		return nil, err
-	}
-	identity, err := ed25519Identity(pub)
-	if err != nil {
-		return nil, err
+	case *rsa.PrivateKey:
+		if priv.E > math.MaxUint32 {
+			return nil, errors.New("mtls: public RSA exponent " + strconv.Itoa(priv.E) + " is too large")
+		}
+		if identity, err = rsaIdentity(priv); err != nil {
+			return nil, err
+		}
+		priv.Precompute()
+		signer = priv
+
+	default:
+		return nil, fmt.Errorf("mtls: unsupported private key type: %T", priv)
 	}
 
-	return &EdDSAPrivateKey{
-		priv:     priv,
+	return &PrivateKey{
+		signer:   signer,
 		identity: identity,
 	}, nil
 }
 
-// Private returns the EdDSA private key.
-func (pk *EdDSAPrivateKey) Private() crypto.PrivateKey { return pk.priv }
-
-// Sign signs the given message with the EdDSA private key. rand is ignored and can be nil.
-//
-// If opts.HashFunc() is crypto.SHA512, the pre-hashed variant Ed25519ph is used
-// and message is expected to be a SHA-512 hash, otherwise opts.HashFunc() must be
-// crypto.Hash(0) and the message must not be hashed, as Ed25519 performs two passes
-// over messages to be signed.
-func (pk *EdDSAPrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	return pk.priv.Sign(rand, message, opts)
+// PrivateKey is a [Signer] with a directly accessible private key.
+type PrivateKey struct {
+	signer   crypto.Signer
+	identity Identity
 }
 
-// Public returns the EdDSA public key.
-func (pk *EdDSAPrivateKey) Public() crypto.PublicKey {
-	return pk.priv.Public()
+// Private returns the underlying private key. Either a [ed25519.PrivateKey],
+// [*ecdsa.PrivateKey] or [*rsa.PrivateKey].
+func (pk *PrivateKey) Private() crypto.PrivateKey { return pk.signer }
+
+// Public returns the public key corresponding to the private key.
+func (pk *PrivateKey) Public() crypto.PublicKey { return pk.signer.Public() }
+
+// Identity returns the identity of the private key's public key.
+func (pk *PrivateKey) Identity() Identity { return pk.identity }
+
+// Sign signs message with the private key. See [crypto.Signer] for
+// algorithm-specific requirements on message and opts.
+func (pk *PrivateKey) Sign(random io.Reader, message []byte, opts crypto.SignerOpts) ([]byte, error) {
+	return pk.signer.Sign(random, message, opts)
 }
 
-// Identity returns the identity of the EdDSA public key.
-func (pk *EdDSAPrivateKey) Identity() Identity {
-	return pk.identity
-}
+// MarshalText returns the key's textual representation.
+func (pk *PrivateKey) MarshalText() ([]byte, error) {
+	switch priv := pk.signer.(type) {
+	case ed25519.PrivateKey:
+		var text [46]byte
+		b := append(text[:0], "k1:"...)
+		b = base64.RawURLEncoding.AppendEncode(b, priv[:ed25519.SeedSize])
+		return b, nil
 
-// MarshalText returns a textual representation of the private key.
-//
-// It returns output equivalent to [EdDSAPrivateKey.String]
-func (pk *EdDSAPrivateKey) MarshalText() ([]byte, error) {
-	var text [46]byte
-	b := append(text[:0], "k1:"...)
-	b = base64.RawURLEncoding.AppendEncode(b, pk.priv[:ed25519.SeedSize])
-	return b, nil
-}
+	case *ecdsa.PrivateKey:
+		// FillBytes returns a fixed-width slice so all private key
+		// representations of a given curve are the same length. A
+		// P-521 private key is at most 66 bytes long.
+		var p [66]byte
+		d := priv.D.FillBytes(p[:])
+		d = d[66-(priv.Curve.Params().BitSize+7)/8:]
 
-// UnmarshalText parses a private key textual representation.
-func (pk *EdDSAPrivateKey) UnmarshalText(text []byte) error {
-	if !bytes.HasPrefix(text, []byte("k1:")) {
-		return errors.New("mtls: invalid EdDSA private key")
+		var buf [3 + 88]byte
+		b := append(buf[:0], "k2:"...)
+		b = base64.RawURLEncoding.AppendEncode(b, d)
+		return b, nil
+
+	case *rsa.PrivateKey:
+		return base64.RawURLEncoding.AppendEncode([]byte("k3:"), encodeRSAPrivateKey(priv)), nil
+
+	default:
+		return nil, fmt.Errorf("mtls: unsupported private key type: %T", priv)
 	}
-	text = text[3:]
+}
 
+// UnmarshalText parses a private key's textual representation. See
+// [PrivateKey.MarshalText] for the accepted formats.
+func (pk *PrivateKey) UnmarshalText(text []byte) error {
+	switch {
+	case bytes.HasPrefix(text, []byte("k1:")):
+		return pk.unmarshalEdDSA(text[3:])
+	case bytes.HasPrefix(text, []byte("k2:")):
+		return pk.unmarshalECDSA(text[3:])
+	case bytes.HasPrefix(text, []byte("k3:")):
+		return pk.unmarshalRSA(text[3:])
+	default:
+		return errors.New("mtls: invalid private key")
+	}
+}
+
+// String returns the key's string representation.
+//
+// Its output is equivalent to [PrivateKey.MarshalText].
+func (pk *PrivateKey) String() string {
+	b, err := pk.MarshalText()
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func (pk *PrivateKey) unmarshalEdDSA(text []byte) error {
 	var dec [32]byte
 	if n := base64.RawURLEncoding.DecodedLen(len(text)); n != len(dec) {
 		return errors.New("mtls: invalid EdDSA private key length " + strconv.Itoa(n))
@@ -168,96 +190,11 @@ func (pk *EdDSAPrivateKey) UnmarshalText(text []byte) error {
 	if err != nil {
 		return err
 	}
-	pk.priv, pk.identity = priv, identity
+	pk.signer, pk.identity = priv, identity
 	return nil
 }
 
-// String returns a string representation of the private key.
-//
-// Its output is equivalent to [EdDSAPrivateKey.MarshalText]
-func (pk *EdDSAPrivateKey) String() string {
-	return "k1:" + base64.RawURLEncoding.EncodeToString(pk.priv[:ed25519.SeedSize])
-}
-
-// GenerateKeyECDSA generates a new [ECDSAPrivateKey] for the given elliptic curve
-// using entropy from random. If rand is nil, [crypto/rand.Reader] will be used.
-//
-// Currently, only the NIST curves P-256, P-384 and P-521 are supported.
-func GenerateKeyECDSA(curve elliptic.Curve) (*ECDSAPrivateKey, error) {
-	switch curve {
-	default:
-		return nil, errors.New("mtls: curve " + curve.Params().Name + " is not supported")
-	case elliptic.P256():
-	case elliptic.P384():
-	case elliptic.P521():
-	}
-
-	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
-	if err != nil {
-		return nil, err
-	}
-	identity, err := ecdsaIdentity(priv)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ECDSAPrivateKey{
-		priv:     priv,
-		identity: identity,
-	}, nil
-}
-
-// ECDSAPrivateKey is a [PrivateKey] for the elliptic curve digital
-// signature algorithm as specified in FIPS 186-4 and SEC 1, Version 2.0.
-type ECDSAPrivateKey struct {
-	priv     *ecdsa.PrivateKey
-	identity Identity
-}
-
-// Sign signs a digest (which should be the result of hashing a larger message with opts.HashFunc())
-// using the ECDSA private key. If the hash is longer than the bit-length of the private key's
-// curve order, the hash will be truncated to that length. It returns the ASN.1 encoded signature.
-//
-// If rand is not nil, the signature is randomized. Most applications should use [crypto/rand.Reader]
-// as rand. If rand is nil, Sign will produce a deterministic signature according to RFC 6979.
-func (pk *ECDSAPrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	return pk.priv.Sign(rand, message, opts)
-}
-
-// Private returns the ECDSA private key.
-func (pk *ECDSAPrivateKey) Private() crypto.PrivateKey { return pk.priv }
-
-// Public returns the ECDSA public key.
-func (pk *ECDSAPrivateKey) Public() crypto.PublicKey { return pk.priv.Public() }
-
-// Identity returns the identity of the ECDSA public key.
-func (pk *ECDSAPrivateKey) Identity() Identity { return pk.identity }
-
-// MarshalText returns the key's textual representation.
-//
-// It returns output equivalent to [ECDSAPrivateKey.String].
-func (pk *ECDSAPrivateKey) MarshalText() ([]byte, error) {
-	// We use FillBytes instead of Bytes since the later returns
-	// a variable-size slice. However, we want all private key
-	// representations to be of a fixed length. A P-521 private
-	// key is at most 66 bytes long.
-	var p [66]byte
-	priv := pk.priv.D.FillBytes(p[:])
-	priv = priv[66-(pk.priv.Curve.Params().BitSize+7)/8:]
-
-	var buf [3 + 88]byte
-	b := append(buf[:0], "k2:"...)
-	b = base64.RawURLEncoding.AppendEncode(b, priv)
-	return b, nil
-}
-
-// UnmarshalText parses a ECDSA private key textual representation.
-func (pk *ECDSAPrivateKey) UnmarshalText(text []byte) error {
-	if !bytes.HasPrefix(text, []byte("k2:")) {
-		return errors.New("mtls: invalid ECDSA private key")
-	}
-	text = text[3:]
-
+func (pk *PrivateKey) unmarshalECDSA(text []byte) error {
 	var (
 		curve elliptic.Curve
 		n     = base64.RawURLEncoding.DecodedLen(len(text))
@@ -287,94 +224,11 @@ func (pk *ECDSAPrivateKey) UnmarshalText(text []byte) error {
 		return err
 	}
 
-	pk.priv, pk.identity = priv, identity
+	pk.signer, pk.identity = priv, identity
 	return nil
 }
 
-// String returns the key's string representation.
-//
-// Its output is equivalent to [ECDSAPrivateKey.MarshalText]
-func (pk *ECDSAPrivateKey) String() string {
-	// We use FillBytes instead of Bytes since the later returns
-	// a variable-size slice. However, we want all private key
-	// representations to be of a fixed length. A P-521 private
-	// key is at most 66 bytes long.
-	var p [66]byte
-	priv := pk.priv.D.FillBytes(p[:])
-	priv = priv[66-(pk.priv.Curve.Params().BitSize+7)/8:]
-
-	return "k2:" + base64.RawURLEncoding.EncodeToString(priv)
-}
-
-// GenerateKeyRSA generates a random RSA private key of the given bit size.
-//
-// If bits is less than 1024, [GenerateKeyRSA] returns an error. See the
-// "[Minimum key size]" section for further details.
-//
-// Most applications should use [crypto/rand.Reader] as random. Note that the
-// returned key does not depend deterministically on the bytes read from rand,
-// and may change between calls and/or between versions.
-//
-// [Minimum key size]: https://pkg.go.dev/crypto/rsa#hdr-Minimum_key_size
-func GenerateKeyRSA(bits int) (*RSAPrivateKey, error) {
-	priv, err := rsa.GenerateKey(rand.Reader, bits)
-	if err != nil {
-		return nil, err
-	}
-	if priv.E > math.MaxUint32 {
-		return nil, errors.New("mtls: public RSA exponent " + strconv.Itoa(priv.E) + " is too large")
-	}
-	priv.Precompute()
-
-	identity, err := rsaIdentity(priv)
-	if err != nil {
-		return nil, err
-	}
-	return &RSAPrivateKey{
-		priv:     priv,
-		identity: identity,
-	}, nil
-}
-
-// RSAPrivateKey represents an RSA [PrivateKey].
-type RSAPrivateKey struct {
-	priv     *rsa.PrivateKey
-	identity Identity
-}
-
-// Sign signs digest with the RSA private key, reading randomness from rand.
-// If opts is a [*crypto/rsa.PSSOptions] then the PSS algorithm will be used, otherwise PKCS #1 v1.5 will be used.
-// digest must be the result of hashing the input message using opts.HashFunc().
-//
-// This method implements [crypto.Signer], which is an interface to support keys where the private
-// part is kept in, for example, a hardware module.
-func (pk *RSAPrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	return pk.priv.Sign(rand, message, opts)
-}
-
-// Private returns the RSA private key.
-func (pk *RSAPrivateKey) Private() crypto.PrivateKey { return pk.priv }
-
-// Public returns the RSA public key.
-func (pk *RSAPrivateKey) Public() crypto.PublicKey { return pk.priv.Public() }
-
-// Identity returns the identity of the RSA public key.
-func (pk *RSAPrivateKey) Identity() Identity { return pk.identity }
-
-// MarshalText returns a textual representation of the private key.
-//
-// It returns output equivalent to [RSAPrivateKey.String].
-func (pk *RSAPrivateKey) MarshalText() ([]byte, error) {
-	return base64.RawURLEncoding.AppendEncode([]byte("k3:"), pk.encode()), nil
-}
-
-// UnmarshalText parses a textual representation of an RSA private key.
-func (pk *RSAPrivateKey) UnmarshalText(text []byte) error {
-	if !bytes.HasPrefix(text, []byte("k3:")) {
-		return errors.New("mtls: invalid RSA private key")
-	}
-	text = text[3:]
-
+func (pk *PrivateKey) unmarshalRSA(text []byte) error {
 	var err error
 	data := make([]byte, 0, base64.RawURLEncoding.DecodedLen(len(text)))
 	if data, err = base64.RawURLEncoding.AppendDecode(data, text); err != nil {
@@ -423,19 +277,11 @@ func (pk *RSAPrivateKey) UnmarshalText(text []byte) error {
 		return err
 	}
 
-	pk.priv = priv
-	pk.identity = identity
+	pk.signer, pk.identity = priv, identity
 	return nil
 }
 
-// String returns a string representation of the private key.
-//
-// Its output is equivalent to [RSAPrivateKey.MarshalText]
-func (pk *RSAPrivateKey) String() string {
-	return "k3:" + base64.RawURLEncoding.EncodeToString(pk.encode())
-}
-
-// encode returns the RSA key's binary representation:
+// encodeRSAPrivateKey returns the RSA key's binary representation:
 //
 //	len(E) | E | len(P) | P | len(Q) | Q | len(D) | D
 //
@@ -449,9 +295,9 @@ func (pk *RSAPrivateKey) String() string {
 // Hence, we include D to avoid re-implementing private exponent calculations.
 // The binary representation puts D at the end such that we can support shorter
 // private keys (without D) in the future.
-func (pk *RSAPrivateKey) encode() []byte {
+func encodeRSAPrivateKey(priv *rsa.PrivateKey) []byte {
 	var (
-		D, P, Q = pk.priv.D, pk.priv.Primes[0], pk.priv.Primes[1]
+		D, P, Q = priv.D, priv.Primes[0], priv.Primes[1]
 		d, p, q = (D.BitLen() + 7) / 8, (P.BitLen() + 7) / 8, (Q.BitLen() + 7) / 8
 
 		buf = make([]byte, max(d, p, q))
@@ -459,7 +305,7 @@ func (pk *RSAPrivateKey) encode() []byte {
 	)
 
 	out = binary.BigEndian.AppendUint16(out, 4)
-	out = binary.BigEndian.AppendUint32(out, uint32(pk.priv.E))
+	out = binary.BigEndian.AppendUint32(out, uint32(priv.E))
 
 	out = binary.BigEndian.AppendUint16(out, uint16(p))
 	out = append(out, P.FillBytes(buf[:p])...)

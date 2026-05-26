@@ -23,9 +23,13 @@ import (
 func TestGenerateKeyEdDSA(t *testing.T) {
 	t.Parallel()
 
-	key, err := mtls.GenerateKeyEdDSA(rand.Reader)
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate EdDSA private key: %v", err)
+	}
+	key, err := mtls.NewPrivateKey(priv)
+	if err != nil {
+		t.Fatalf("failed to wrap EdDSA private key: %v", err)
 	}
 
 	s := key.String()
@@ -50,9 +54,13 @@ func TestGenerateKeyECDSA(t *testing.T) {
 		elliptic.P521(),
 	}
 	for _, curve := range curves {
-		key, err := mtls.GenerateKeyECDSA(curve)
+		priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 		if err != nil {
 			t.Fatalf("failed to generate ECDSA private key for curve %s: %v", curve.Params().Name, err)
+		}
+		key, err := mtls.NewPrivateKey(priv)
+		if err != nil {
+			t.Fatalf("failed to wrap ECDSA private key for curve %s: %v", curve.Params().Name, err)
 		}
 
 		s := key.String()
@@ -74,9 +82,13 @@ func TestGenerateKeyRSA(t *testing.T) {
 
 	bitSizes := []int{2048, 3072, 4096}
 	for _, bits := range bitSizes {
-		key, err := mtls.GenerateKeyRSA(bits)
+		priv, err := rsa.GenerateKey(rand.Reader, bits)
 		if err != nil {
 			t.Fatalf("failed to generate %d RSA private key: %v", bits, err)
+		}
+		key, err := mtls.NewPrivateKey(priv)
+		if err != nil {
+			t.Fatalf("failed to wrap %d RSA private key: %v", bits, err)
 		}
 
 		s := key.String()
