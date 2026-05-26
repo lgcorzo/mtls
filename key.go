@@ -19,7 +19,6 @@ import (
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -29,19 +28,26 @@ import (
 	"time"
 )
 
-// PrivateKey is private key for TLS and mutual TLS connections.
+// Signer extends [crypto.Signer] with an [Identity] method
+// to identify the signing key.
+//
+// Signer is useful for private keys that are not directly accessible.
+// For example, keys in hardware modules.
+type Signer interface {
+	crypto.Signer
+
+	// Identity returns a stable identifier for the Signer's public key.
+	Identity() Identity
+}
+
+// PrivateKey is a [Signer] with a directly accessible private key.
 type PrivateKey interface {
-	// Private returns the PrivateKey's cryptographic private key.
+	Signer
+
+	// Private returns the underlying cryptographic private key.
 	Private() crypto.PrivateKey
 
-	// Public returns the PrivateKey's cryptographic public key.
-	Public() crypto.PublicKey
-
-	// Identity returns the PrivateKey's [Identity]. It identifies
-	// the cryptographic public key.
-	Identity() Identity
-
-	// String returns a string representation of the PrivateKey.
+	// String returns the string representation of the private key.
 	String() string
 }
 
@@ -106,10 +112,16 @@ func GenerateKeyEdDSA(random io.Reader) (*EdDSAPrivateKey, error) {
 }
 
 // Private returns the EdDSA private key.
-func (pk *EdDSAPrivateKey) Private() crypto.PrivateKey {
-	priv := make(ed25519.PrivateKey, ed25519.PrivateKeySize)
-	copy(priv, pk.priv)
-	return priv
+func (pk *EdDSAPrivateKey) Private() crypto.PrivateKey { return pk.priv }
+
+// Sign signs the given message with the EdDSA private key. rand is ignored and can be nil.
+//
+// If opts.HashFunc() is crypto.SHA512, the pre-hashed variant Ed25519ph is used
+// and message is expected to be a SHA-512 hash, otherwise opts.HashFunc() must be
+// crypto.Hash(0) and the message must not be hashed, as Ed25519 performs two passes
+// over messages to be signed.
+func (pk *EdDSAPrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	return pk.priv.Sign(rand, message, opts)
 }
 
 // Public returns the EdDSA public key.
@@ -171,11 +183,7 @@ func (pk *EdDSAPrivateKey) String() string {
 // using entropy from random. If rand is nil, [crypto/rand.Reader] will be used.
 //
 // Currently, only the NIST curves P-256, P-384 and P-521 are supported.
-func GenerateKeyECDSA(curve elliptic.Curve, random io.Reader) (*ECDSAPrivateKey, error) {
-	if random == nil {
-		random = rand.Reader
-	}
-
+func GenerateKeyECDSA(curve elliptic.Curve) (*ECDSAPrivateKey, error) {
 	switch curve {
 	default:
 		return nil, errors.New("mtls: curve " + curve.Params().Name + " is not supported")
@@ -184,7 +192,7 @@ func GenerateKeyECDSA(curve elliptic.Curve, random io.Reader) (*ECDSAPrivateKey,
 	case elliptic.P521():
 	}
 
-	priv, err := ecdsa.GenerateKey(curve, random)
+	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -206,28 +214,21 @@ type ECDSAPrivateKey struct {
 	identity Identity
 }
 
-// Private returns the ECDSA private key.
-func (pk *ECDSAPrivateKey) Private() crypto.PrivateKey {
-	var D, X, Y big.Int
-	return &ecdsa.PrivateKey{
-		D: D.Set(pk.priv.D),
-		PublicKey: ecdsa.PublicKey{
-			Curve: pk.priv.Curve,
-			X:     X.Set(pk.priv.X),
-			Y:     Y.Set(pk.priv.Y),
-		},
-	}
+// Sign signs a digest (which should be the result of hashing a larger message with opts.HashFunc())
+// using the ECDSA private key. If the hash is longer than the bit-length of the private key's
+// curve order, the hash will be truncated to that length. It returns the ASN.1 encoded signature.
+//
+// If rand is not nil, the signature is randomized. Most applications should use [crypto/rand.Reader]
+// as rand. If rand is nil, Sign will produce a deterministic signature according to RFC 6979.
+func (pk *ECDSAPrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	return pk.priv.Sign(rand, message, opts)
 }
 
+// Private returns the ECDSA private key.
+func (pk *ECDSAPrivateKey) Private() crypto.PrivateKey { return pk.priv }
+
 // Public returns the ECDSA public key.
-func (pk *ECDSAPrivateKey) Public() crypto.PublicKey {
-	var X, Y big.Int
-	return &ecdsa.PublicKey{
-		Curve: pk.priv.Curve,
-		X:     X.Set(pk.priv.X),
-		Y:     Y.Set(pk.priv.Y),
-	}
-}
+func (pk *ECDSAPrivateKey) Public() crypto.PublicKey { return pk.priv.Public() }
 
 // Identity returns the identity of the ECDSA public key.
 func (pk *ECDSAPrivateKey) Identity() Identity { return pk.identity }
@@ -315,8 +316,8 @@ func (pk *ECDSAPrivateKey) String() string {
 // and may change between calls and/or between versions.
 //
 // [Minimum key size]: https://pkg.go.dev/crypto/rsa#hdr-Minimum_key_size
-func GenerateKeyRSA(random io.Reader, bits int) (*RSAPrivateKey, error) {
-	priv, err := rsa.GenerateKey(random, bits)
+func GenerateKeyRSA(bits int) (*RSAPrivateKey, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +340,16 @@ func GenerateKeyRSA(random io.Reader, bits int) (*RSAPrivateKey, error) {
 type RSAPrivateKey struct {
 	priv     *rsa.PrivateKey
 	identity Identity
+}
+
+// Sign signs digest with the RSA private key, reading randomness from rand.
+// If opts is a [*crypto/rsa.PSSOptions] then the PSS algorithm will be used, otherwise PKCS #1 v1.5 will be used.
+// digest must be the result of hashing the input message using opts.HashFunc().
+//
+// This method implements [crypto.Signer], which is an interface to support keys where the private
+// part is kept in, for example, a hardware module.
+func (pk *RSAPrivateKey) Sign(rand io.Reader, message []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	return pk.priv.Sign(rand, message, opts)
 }
 
 // Private returns the RSA private key.
@@ -579,22 +590,15 @@ func decodeRSAParam(b []byte) ([]byte, *big.Int, error) {
 	return b[2+n:], new(big.Int).SetBytes(b[2 : 2+n]), nil
 }
 
-// newCertificate returns a new TLS certificate using the
-// given private key.
-func newCertificate(key PrivateKey) (*tls.Certificate, error) {
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		return nil, err
-	}
-
+// newCertificate returns a new TLS certificate using the given signer.
+func newCertificate(signer Signer) (*tls.Certificate, error) {
+	now := time.Now().UTC()
 	template := &x509.Certificate{
-		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			CommonName: key.Identity().String(),
+			CommonName: signer.Identity().String(),
 		},
-		NotBefore: time.Now().UTC(),
-		NotAfter:  time.Now().UTC().Add(365 * 24 * time.Hour),
+		NotBefore: now,
+		NotAfter:  now.Add(365 * 24 * time.Hour),
 		KeyUsage:  x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{
 			x509.ExtKeyUsageClientAuth,
@@ -603,25 +607,19 @@ func newCertificate(key PrivateKey) (*tls.Certificate, error) {
 		BasicConstraintsValid: true,
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key.Private())
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, signer.Public(), signer)
 	if err != nil {
 		return nil, err
 	}
-	privDER, err := x509.MarshalPKCS8PrivateKey(key.Private())
+
+	leaf, err := x509.ParseCertificate(certDER)
 	if err != nil {
 		return nil, err
 	}
-	cert, err := tls.X509KeyPair(
-		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}),
-		pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if cert.Leaf == nil {
-		if cert.Leaf, err = x509.ParseCertificate(cert.Certificate[0]); err != nil {
-			return nil, err
-		}
-	}
-	return &cert, nil
+
+	return &tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  signer,
+		Leaf:        leaf,
+	}, nil
 }
