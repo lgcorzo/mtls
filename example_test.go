@@ -19,6 +19,20 @@ import (
 	"aead.dev/mtls"
 )
 
+// ExampleGenerateKey shows to generate a [PrivateKey].
+func ExampleGenerateKey() {
+	priv, err := mtls.GenerateKey()
+	if err != nil {
+		log.Fatalf("failed to generate key: %v", err)
+	}
+
+	if priv.Identity().IsZero() {
+		log.Fatal("generated key has an empty identity")
+	}
+
+	// Output:
+}
+
 // ExampleClient shows how to configure a simple HTTP client verifying
 // a pinned public key for the server running at "10.1.2.3:443". For all
 // other servers it uses regular TLS certificate verification. The client

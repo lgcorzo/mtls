@@ -49,6 +49,19 @@ func ParsePrivateKey(s string) (*PrivateKey, error) {
 	return &pk, nil
 }
 
+// GenerateKey generates a new [PrivateKey].
+//
+// Currently, it returns an Ed25519 private key. However,
+// this might change and callers must not rely on the concrete
+// key type.
+func GenerateKey() (*PrivateKey, error) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return NewPrivateKey(priv)
+}
+
 // NewPrivateKey returns a new [PrivateKey] wrapping the given private key.
 //
 // Currently supported types are [ed25519.PrivateKey], [*ecdsa.PrivateKey]
