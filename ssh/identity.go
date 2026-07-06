@@ -161,10 +161,19 @@ func ed25519Identity(key ed25519.PublicKey) Identity {
 func rsaIdentity(key *rsa.PublicKey) Identity {
 	const Type = "ssh-rsa"
 
+	// RFC 4253, Section 6.6 encodes e and n as mpint per RFC 4251, Section 5:
+	// if the MSB of the magnitude is set, a 0x00 byte must be prepended so the
+	// value is interpreted as positive. RSA moduli always have the MSB set.
 	exp := binary.BigEndian.AppendUint64(make([]byte, 0, 8), uint64(key.E))
 	exp = exp[bits.LeadingZeros64(uint64(key.E))/8:]
+	if len(exp) > 0 && exp[0]&0x80 != 0 {
+		exp = append([]byte{0x00}, exp...)
+	}
 
 	nBytes := key.N.Bytes()
+	if len(nBytes) > 0 && nBytes[0]&0x80 != 0 {
+		nBytes = append([]byte{0x00}, nBytes...)
+	}
 
 	size := 4 + len(Type) + 4 + len(exp) + 4 + len(nBytes)
 	b := make([]byte, 0, size)
@@ -186,22 +195,18 @@ func ecdsaIdentity(key *ecdsa.PublicKey) Identity {
 	var (
 		keyType   string
 		curveName string
-		keySize   int
 	)
 
 	switch key.Curve {
 	case elliptic.P256():
 		keyType = "ecdsa-sha2-nistp256"
 		curveName = "nistp256"
-		keySize = 32
 	case elliptic.P384():
 		keyType = "ecdsa-sha2-nistp384"
 		curveName = "nistp384"
-		keySize = 48
 	case elliptic.P521():
 		keyType = "ecdsa-sha2-nistp521"
 		curveName = "nistp521"
-		keySize = 66
 	default:
 		return Identity{}
 	}
@@ -211,7 +216,9 @@ func ecdsaIdentity(key *ecdsa.PublicKey) Identity {
 		return Identity{}
 	}
 
-	size := 4 + len(keyType) + 4 + len(curveName) + 4 + 2*keySize
+	// RFC 5656, Section 3.1 encodes Q as the SEC 1 uncompressed point
+	// 0x04 || X || Y, including the 0x04 prefix.
+	size := 4 + len(keyType) + 4 + len(curveName) + 4 + len(pointBytes)
 	b := make([]byte, 0, size)
 
 	b = binary.BigEndian.AppendUint32(b, uint32(len(keyType)))
@@ -220,11 +227,8 @@ func ecdsaIdentity(key *ecdsa.PublicKey) Identity {
 	b = binary.BigEndian.AppendUint32(b, uint32(len(curveName)))
 	b = append(b, curveName...)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(2*keySize))
-
-	// pointBytes is 0x04 || X || Y (uncompressed SEC 1 format)
-	// Skip the 0x04 prefix and extract X and Y
-	b = append(b, pointBytes[1:]...)
+	b = binary.BigEndian.AppendUint32(b, uint32(len(pointBytes)))
+	b = append(b, pointBytes...)
 
 	return Identity{hash: sha256.Sum256(b)}
 }
