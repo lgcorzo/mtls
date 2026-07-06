@@ -143,13 +143,11 @@ func PublicKeyIdentity(key crypto.PublicKey) (Identity, error) {
 
 // ed25519Identity computes the SHA256 identity of an Ed25519 public key.
 func ed25519Identity(key ed25519.PublicKey) Identity {
-	const Type = "ssh-ed25519"
-
 	var buf [4 + 11 + 4 + ed25519.PublicKeySize]byte
 	b := buf[:0]
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(Type)))
-	b = append(b, Type...)
+	b = binary.BigEndian.AppendUint32(b, uint32(len(KeyTypeEd25519)))
+	b = append(b, KeyTypeEd25519...)
 
 	b = binary.BigEndian.AppendUint32(b, uint32(len(key)))
 	b = append(b, key...)
@@ -159,8 +157,6 @@ func ed25519Identity(key ed25519.PublicKey) Identity {
 
 // rsaIdentity computes the SHA256 identity of an RSA public key.
 func rsaIdentity(key *rsa.PublicKey) Identity {
-	const Type = "ssh-rsa"
-
 	// RFC 4253, Section 6.6 encodes e and n as mpint per RFC 4251, Section 5:
 	// if the MSB of the magnitude is set, a 0x00 byte must be prepended so the
 	// value is interpreted as positive. RSA moduli always have the MSB set.
@@ -175,11 +171,11 @@ func rsaIdentity(key *rsa.PublicKey) Identity {
 		nBytes = append([]byte{0x00}, nBytes...)
 	}
 
-	size := 4 + len(Type) + 4 + len(exp) + 4 + len(nBytes)
+	size := 4 + len(KeyTypeRSA) + 4 + len(exp) + 4 + len(nBytes)
 	b := make([]byte, 0, size)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(Type)))
-	b = append(b, Type...)
+	b = binary.BigEndian.AppendUint32(b, uint32(len(KeyTypeRSA)))
+	b = append(b, KeyTypeRSA...)
 
 	b = binary.BigEndian.AppendUint32(b, uint32(len(exp)))
 	b = append(b, exp...)
@@ -199,13 +195,13 @@ func ecdsaIdentity(key *ecdsa.PublicKey) Identity {
 
 	switch key.Curve {
 	case elliptic.P256():
-		keyType = "ecdsa-sha2-nistp256"
+		keyType = KeyTypeP256
 		curveName = "nistp256"
 	case elliptic.P384():
-		keyType = "ecdsa-sha2-nistp384"
+		keyType = KeyTypeP384
 		curveName = "nistp384"
 	case elliptic.P521():
-		keyType = "ecdsa-sha2-nistp521"
+		keyType = KeyTypeP521
 		curveName = "nistp521"
 	default:
 		return Identity{}

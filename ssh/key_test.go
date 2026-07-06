@@ -151,23 +151,23 @@ var privateKeyIdentityTests = []struct {
 }{
 	{
 		Filename: "testdata/keys/ed25519",
-		Identity: parseIdentity("SHA256:gqFD/f5dw7/oG7rBDdoyOA3pVpfReq61L6tIyJ/4deU"),
+		Identity: parseIdentity("SHA256:rGc55XPHw1pCcd1hg0K2U4sgFeY6i5X88wkEOpmtSkw"),
 	},
 	{
 		Filename: "testdata/keys/rsa",
-		Identity: parseIdentity("SHA256:AzWFDZ4Pdz2ckSjPVl0tVff1+/EuAbaOfn5hGyKEXMQ"),
+		Identity: parseIdentity("SHA256:sPCOWZS69LBT9srkX7/EeQNYBXhBOEc+s27LSVkMPa4"),
 	},
 	{
 		Filename: "testdata/keys/p256",
-		Identity: parseIdentity("SHA256:nHy3X3UYvk0z7oaB60XJWCA4qumpEIc9iNBaHrqi8qE"),
+		Identity: parseIdentity("SHA256:SW4VaLkr1qifW7BMdKOK+3RcxOFdleT2bdFKnrLjZEk"),
 	},
 	{
 		Filename: "testdata/keys/p384",
-		Identity: parseIdentity("SHA256:9dv2M6NArMjm5M4lnynxXMuaMXDLfCRO7NRxT3Hg+yE"),
+		Identity: parseIdentity("SHA256:MohftOAmTXO2J98bn0oITrH9h57g4W7UfrmRaM9qNy4"),
 	},
 	{
 		Filename: "testdata/keys/p521",
-		Identity: parseIdentity("SHA256:0lDPq95asBfIFw/X9a2oD/0edy8kEw7YS03EDJePIyw"),
+		Identity: parseIdentity("SHA256:ZRnbh8jBYMDL8yb+GYx1iFdaDfNR6lIrS4KX60hyFbA"),
 	},
 }
 

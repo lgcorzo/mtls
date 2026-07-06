@@ -121,7 +121,7 @@ func parsePublicKey(blob []byte) (crypto.PublicKey, error) {
 		}
 		return ed25519.PublicKey(slices.Clone(keyBytes)), nil
 
-	case KeyTypeRSA, KeyTypeRSA + "-sha256":
+	case KeyTypeRSA:
 		eBytes, err := r.readBytes()
 		if err != nil {
 			return nil, err
@@ -138,7 +138,7 @@ func parsePublicKey(blob []byte) (crypto.PublicKey, error) {
 		}
 		return &rsa.PublicKey{E: int(e.Int64()), N: n}, nil
 
-	case "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521":
+	case KeyTypeP256, KeyTypeP384, KeyTypeP521:
 		curveName, err := r.readString()
 		if err != nil {
 			return nil, err
