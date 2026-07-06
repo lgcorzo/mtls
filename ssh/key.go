@@ -8,10 +8,13 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
 	"io"
+	"math/big"
+	"slices"
 )
 
 // Signer extends [crypto.Signer] with an [Identity] method
@@ -94,4 +97,75 @@ func (pk *PrivateKey) Identity() Identity { return pk.identity }
 // algorithm-specific requirements on message and opts.
 func (pk *PrivateKey) Sign(random io.Reader, message []byte, opts crypto.SignerOpts) ([]byte, error) {
 	return pk.signer.Sign(random, message, opts)
+}
+
+// parsePublicKey parses the key blob and returns the public key.
+func parsePublicKey(blob []byte) (crypto.PublicKey, error) {
+	r := &reader{data: blob}
+	algorithm, err := r.readString()
+	if err != nil {
+		return nil, err
+	}
+
+	switch algorithm {
+	default:
+		return nil, fmt.Errorf("ssh: unsupported key type %s", algorithm)
+
+	case KeyTypeEd25519:
+		keyBytes, err := r.readBytes()
+		if err != nil {
+			return nil, err
+		}
+		if len(keyBytes) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("ssh: invalid ed25519 key size")
+		}
+		return ed25519.PublicKey(slices.Clone(keyBytes)), nil
+
+	case KeyTypeRSA, KeyTypeRSA + "-sha256":
+		eBytes, err := r.readBytes()
+		if err != nil {
+			return nil, err
+		}
+		nBytes, err := r.readBytes()
+		if err != nil {
+			return nil, err
+		}
+
+		e := new(big.Int).SetBytes(eBytes)
+		n := new(big.Int).SetBytes(nBytes)
+		if !e.IsInt64() {
+			return nil, fmt.Errorf("ssh: RSA exponent too large")
+		}
+		return &rsa.PublicKey{E: int(e.Int64()), N: n}, nil
+
+	case "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521":
+		curveName, err := r.readString()
+		if err != nil {
+			return nil, err
+		}
+		pointBytes, err := r.readBytes()
+		if err != nil {
+			return nil, err
+		}
+
+		var curve elliptic.Curve
+		switch curveName {
+		case "nistp256":
+			curve = elliptic.P256()
+		case "nistp384":
+			curve = elliptic.P384()
+		case "nistp521":
+			curve = elliptic.P521()
+		default:
+			return nil, fmt.Errorf("ssh: unknown ECDSA curve %s", curveName)
+		}
+
+		if len(pointBytes) != 2*curve.Params().BitSize/8+1 || pointBytes[0] != 0x04 {
+			return nil, fmt.Errorf("ssh: invalid ECDSA point")
+		}
+		keySize := curve.Params().BitSize / 8
+		x := new(big.Int).SetBytes(pointBytes[1 : 1+keySize])
+		y := new(big.Int).SetBytes(pointBytes[1+keySize:])
+		return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+	}
 }
