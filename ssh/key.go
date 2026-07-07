@@ -160,10 +160,12 @@ func parsePublicKey(blob []byte) (crypto.PublicKey, error) {
 			return nil, fmt.Errorf("ssh: unknown ECDSA curve %s", curveName)
 		}
 
-		if len(pointBytes) != 2*curve.Params().BitSize/8+1 || pointBytes[0] != 0x04 {
+		// Round up: P-521's field is 521 bits, i.e. 66 bytes, so integer
+		// division by 8 would truncate to 65 and reject valid points.
+		keySize := (curve.Params().BitSize + 7) / 8
+		if len(pointBytes) != 2*keySize+1 || pointBytes[0] != 0x04 {
 			return nil, fmt.Errorf("ssh: invalid ECDSA point")
 		}
-		keySize := curve.Params().BitSize / 8
 		x := new(big.Int).SetBytes(pointBytes[1 : 1+keySize])
 		y := new(big.Int).SetBytes(pointBytes[1+keySize:])
 		return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil

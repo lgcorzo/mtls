@@ -126,9 +126,6 @@ type Agent struct {
 // are executed by the Agent. Agent-managed RSA and ECDSA keys cannot be
 // used to sign TLS handshakes. Refer to [AgentKey] documentation.
 func (a *Agent) Keys() ([]*AgentKey, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	respType, respPayload, err := a.sendRequest(sshAgentcRequestIdentities, nil)
 	if err != nil {
 		return nil, err
@@ -173,9 +170,6 @@ func (a *Agent) Keys() ([]*AgentKey, error) {
 // KeyByID returns the first [AgentKey] whose identity matches the given
 // identity, or ErrKeyNotFound. This is optimized to only parse the matching key.
 func (a *Agent) KeyByID(id Identity) (*AgentKey, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	respType, respPayload, err := a.sendRequest(sshAgentcRequestIdentities, nil)
 	if err != nil {
 		return nil, err
@@ -224,9 +218,6 @@ func (a *Agent) KeyByID(id Identity) (*AgentKey, error) {
 // KeyByComment returns the first [AgentKey] whose comment matches the given
 // comment, or ErrKeyNotFound. This is optimized to only parse the matching key.
 func (a *Agent) KeyByComment(comment string) (*AgentKey, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	respType, respPayload, err := a.sendRequest(sshAgentcRequestIdentities, nil)
 	if err != nil {
 		return nil, err
@@ -272,21 +263,27 @@ func (a *Agent) KeyByComment(comment string) (*AgentKey, error) {
 func (a *Agent) Close() error { return a.conn.Close() }
 
 // sendRequest frames, writes a request, and reads one response.
+//
+// The write and the matching read form a single transaction on the shared
+// connection and must not interleave with other requests, so sendRequest
+// holds a.mu for the round-trip only. Callers parse the returned payload
+// without the lock.
 func (a *Agent) sendRequest(msgType byte, payload []byte) (byte, []byte, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	// Write the complete message: uint32 length || msg_type || payload
 	frame := make([]byte, 0, 4+1+len(payload))
 	frame = binary.BigEndian.AppendUint32(frame, 1+uint32(len(payload)))
 	frame = append(frame, msgType)
 	frame = append(frame, payload...)
-	_, err := a.conn.Write(frame)
-	if err != nil {
+	if _, err := a.conn.Write(frame); err != nil {
 		return 0, nil, err
 	}
 
 	// Read the response: uint32 length || byte msg_type || payload
 	var lenFrameResp [4]byte
-	_, err = io.ReadFull(a.conn, lenFrameResp[:])
-	if err != nil {
+	if _, err := io.ReadFull(a.conn, lenFrameResp[:]); err != nil {
 		return 0, nil, err
 	}
 
@@ -298,10 +295,9 @@ func (a *Agent) sendRequest(msgType byte, payload []byte) (byte, []byte, error) 
 		return 0, nil, errors.New("ssh: agent response empty")
 	}
 
-	// Read the message type and payload.
+	// Read the message type and payload
 	respBody := make([]byte, respLen)
-	_, err = io.ReadFull(a.conn, respBody)
-	if err != nil {
+	if _, err := io.ReadFull(a.conn, respBody); err != nil {
 		return 0, nil, err
 	}
 
@@ -373,8 +369,6 @@ func (k *AgentKey) Sign(_ io.Reader, message []byte, opts crypto.SignerOpts) ([]
 		FlagRSASHA256 = 0x02
 		FlagRSASHA512 = 0x04
 	)
-	k.agent.mu.Lock()
-	defer k.agent.mu.Unlock()
 
 	var flags uint32
 	switch k.algorithm {
