@@ -88,7 +88,7 @@ func NewPrivateKey(priv crypto.PrivateKey) (*PrivateKey, error) {
 		signer = priv
 
 	case *rsa.PrivateKey:
-		if priv.E > math.MaxUint32 {
+		if uint64(priv.E) > math.MaxUint32 {
 			return nil, errors.New("mtls: public RSA exponent " + strconv.Itoa(priv.E) + " is too large")
 		}
 		if identity, err = rsaIdentity(priv); err != nil {
