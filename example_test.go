@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"aead.dev/mtls"
+	"github.com/lgcorzo/mtls"
 )
 
 // ExampleClient shows how to configure a simple HTTP client verifying

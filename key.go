@@ -320,7 +320,7 @@ func GenerateKeyRSA(random io.Reader, bits int) (*RSAPrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	if priv.E > math.MaxUint32 {
+	if uint64(priv.E) > math.MaxUint32 {
 		return nil, errors.New("mtls: public RSA exponent " + strconv.Itoa(priv.E) + " is too large")
 	}
 	priv.Precompute()
