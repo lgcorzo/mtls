@@ -1,3 +1,3 @@
-module github.com/lgcorzo/mtls
+module aead.dev/mtls
 
 go 1.25
