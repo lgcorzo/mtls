@@ -386,7 +386,7 @@ func ecdsaIdentity(key *ecdsa.PrivateKey) (Identity, error) {
 		return Identity{}, err
 	}
 
-	pubKey := elliptic.Marshal(key.Curve, key.X, key.Y)
+	pubKey := elliptic.Marshal(key.Curve, key.X, key.Y) //nolint:staticcheck // keep backwards compatibility for ASN.1 EC point encoding
 	b, err := asn1.Marshal(publicKeyInfo{
 		Algorithm: pkix.AlgorithmIdentifier{
 			Algorithm:  oidPublicKeyECDSA,
