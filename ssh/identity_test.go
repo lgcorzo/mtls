@@ -7,7 +7,7 @@ package ssh_test
 import (
 	"testing"
 
-	"aead.dev/mtls/ssh"
+	"github.com/lgcorzo/mtls/ssh"
 )
 
 func TestParseIdentity(t *testing.T) {

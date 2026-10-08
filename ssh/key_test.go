@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"aead.dev/mtls/ssh"
+	"github.com/lgcorzo/mtls/ssh"
 )
 
 // TestGenerateKeyEdDSA tests whether generated EdDSA private keys

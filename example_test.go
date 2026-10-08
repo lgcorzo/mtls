@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"aead.dev/mtls"
+	"github.com/lgcorzo/mtls"
 )
 
 // ExampleGenerateKey shows to generate a [PrivateKey].
@@ -296,7 +296,7 @@ func Example() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.Write([]byte("Hello " + id.String()))
+		_, _ = w.Write([]byte("Hello " + id.String()))
 	}))
 
 	// Configure and start the HTTPS server.

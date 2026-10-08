@@ -15,7 +15,7 @@ import (
 	"os"
 	"testing"
 
-	"aead.dev/mtls"
+	"github.com/lgcorzo/mtls"
 )
 
 // TestGenerateKeyEdDSA tests whether generated EdDSA private keys

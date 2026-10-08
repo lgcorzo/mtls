@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"testing"
 
-	"aead.dev/mtls"
+	"github.com/lgcorzo/mtls"
 )
 
 func TestParseIdentity(t *testing.T) {
