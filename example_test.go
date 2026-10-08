@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"aead.dev/mtls"
+	"github.com/lgcorzo/mtls"
 )
 
 // ExampleGenerateKey shows to generate a [PrivateKey].

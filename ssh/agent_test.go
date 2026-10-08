@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"aead.dev/mtls/ssh"
+	"github.com/lgcorzo/mtls/ssh"
 )
 
 // agentGoldenDir holds the recorded SSH agent protocol messages that the
