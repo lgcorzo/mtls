@@ -98,7 +98,7 @@ func DialAgent() (*Agent, error) {
 	if socket == "" {
 		return nil, errors.New("ssh: SSH_AUTH_SOCK not set")
 	}
-	conn, err := net.Dial("unix", socket)
+	conn, err := net.Dial("unix", socket) // #nosec G704
 	if err != nil {
 		return nil, err
 	}
@@ -272,9 +272,13 @@ func (a *Agent) sendRequest(msgType byte, payload []byte) (byte, []byte, error) 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if len(payload) > maxAgentMessageSize {
+		return 0, nil, fmt.Errorf("ssh: payload size %d exceeds maximum %d", len(payload), maxAgentMessageSize)
+	}
+
 	// Write the complete message: uint32 length || msg_type || payload
 	frame := make([]byte, 0, 4+1+len(payload))
-	frame = binary.BigEndian.AppendUint32(frame, 1+uint32(len(payload)))
+	frame = binary.BigEndian.AppendUint32(frame, 1+uint32(len(payload))) // #nosec G115
 	frame = append(frame, msgType)
 	frame = append(frame, payload...)
 	if _, err := a.conn.Write(frame); err != nil {
@@ -389,11 +393,15 @@ func (k *AgentKey) Sign(_ io.Reader, message []byte, opts crypto.SignerOpts) ([]
 		}
 	}
 
+	if len(k.blob) > maxAgentMessageSize || len(message) > maxAgentMessageSize {
+		return nil, fmt.Errorf("ssh: request payload size exceeds maximum %d", maxAgentMessageSize)
+	}
+
 	// Build sign request payload (without message type).
 	req := make([]byte, 0, 4+len(k.blob)+4+len(message)+4)
-	req = binary.BigEndian.AppendUint32(req, uint32(len(k.blob)))
+	req = binary.BigEndian.AppendUint32(req, uint32(len(k.blob))) // #nosec G115
 	req = append(req, k.blob...)
-	req = binary.BigEndian.AppendUint32(req, uint32(len(message)))
+	req = binary.BigEndian.AppendUint32(req, uint32(len(message))) // #nosec G115
 	req = append(req, message...)
 	req = binary.BigEndian.AppendUint32(req, flags)
 

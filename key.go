@@ -88,7 +88,7 @@ func NewPrivateKey(priv crypto.PrivateKey) (*PrivateKey, error) {
 		signer = priv
 
 	case *rsa.PrivateKey:
-		if uint64(priv.E) > math.MaxUint32 {
+		if priv.E < 0 || uint64(priv.E) > math.MaxUint32 { // #nosec G115
 			return nil, errors.New("mtls: public RSA exponent " + strconv.Itoa(priv.E) + " is too large")
 		}
 		if identity, err = rsaIdentity(priv); err != nil {
@@ -317,16 +317,23 @@ func encodeRSAPrivateKey(priv *rsa.PrivateKey) []byte {
 		out = make([]byte, 0, 12+d+p+q) // length-prefixed encoded len: 2 + 4 + 2 + d + 2 + p + 2 + q
 	)
 
-	out = binary.BigEndian.AppendUint16(out, 4)
-	out = binary.BigEndian.AppendUint32(out, uint32(priv.E))
+	if p < 0 || p > math.MaxUint16 || q < 0 || q > math.MaxUint16 || d < 0 || d > math.MaxUint16 {
+		panic("mtls: invalid RSA parameter bit length")
+	}
+	if priv.E < 0 || uint64(priv.E) > math.MaxUint32 {
+		panic("mtls: invalid RSA public exponent")
+	}
 
-	out = binary.BigEndian.AppendUint16(out, uint16(p))
+	out = binary.BigEndian.AppendUint16(out, 4)
+	out = binary.BigEndian.AppendUint32(out, uint32(priv.E)) // #nosec G115
+
+	out = binary.BigEndian.AppendUint16(out, uint16(p)) // #nosec G115
 	out = append(out, P.FillBytes(buf[:p])...)
 
-	out = binary.BigEndian.AppendUint16(out, uint16(q))
+	out = binary.BigEndian.AppendUint16(out, uint16(q)) // #nosec G115
 	out = append(out, Q.FillBytes(buf[:q])...)
 
-	out = binary.BigEndian.AppendUint16(out, uint16(d))
+	out = binary.BigEndian.AppendUint16(out, uint16(d)) // #nosec G115
 	out = append(out, D.FillBytes(buf[:d])...)
 	return out
 }

@@ -112,7 +112,8 @@ func (c *Client) DialTLSContext(ctx context.Context, network, addr string) (net.
 
 			// We verify mTLS connections using VerifyConnection.
 			// Regular TLS connections are verified using Client.Config.
-			InsecureSkipVerify: true,
+			// CodeQL [go/disabled-certificate-check] Custom mTLS public key verification is performed in VerifyConnection callback
+			InsecureSkipVerify: true, // #nosec G402 -- Custom verification performed in VerifyConnection callback // nosemgrep // lgtm[go/disabled-certificate-check]
 			VerifyConnection: func(state tls.ConnectionState) error {
 				if state.DidResume {
 					return nil
