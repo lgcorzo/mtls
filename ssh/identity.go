@@ -146,10 +146,10 @@ func ed25519Identity(key ed25519.PublicKey) Identity {
 	var buf [4 + 11 + 4 + ed25519.PublicKeySize]byte
 	b := buf[:0]
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(KeyTypeEd25519)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(KeyTypeEd25519))) // #nosec G115
 	b = append(b, KeyTypeEd25519...)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(key)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(key))) // #nosec G115
 	b = append(b, key...)
 
 	return Identity{hash: sha256.Sum256(b)}
@@ -157,11 +157,14 @@ func ed25519Identity(key ed25519.PublicKey) Identity {
 
 // rsaIdentity computes the SHA256 identity of an RSA public key.
 func rsaIdentity(key *rsa.PublicKey) Identity {
+	if key.E < 0 {
+		return Identity{}
+	}
 	// RFC 4253, Section 6.6 encodes e and n as mpint per RFC 4251, Section 5:
 	// if the MSB of the magnitude is set, a 0x00 byte must be prepended so the
 	// value is interpreted as positive. RSA moduli always have the MSB set.
-	exp := binary.BigEndian.AppendUint64(make([]byte, 0, 8), uint64(key.E))
-	exp = exp[bits.LeadingZeros64(uint64(key.E))/8:]
+	exp := binary.BigEndian.AppendUint64(make([]byte, 0, 8), uint64(key.E)) // #nosec G115
+	exp = exp[bits.LeadingZeros64(uint64(key.E))/8:]                       // #nosec G115
 	if len(exp) > 0 && exp[0]&0x80 != 0 {
 		exp = append([]byte{0x00}, exp...)
 	}
@@ -174,13 +177,13 @@ func rsaIdentity(key *rsa.PublicKey) Identity {
 	size := 4 + len(KeyTypeRSA) + 4 + len(exp) + 4 + len(nBytes)
 	b := make([]byte, 0, size)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(KeyTypeRSA)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(KeyTypeRSA))) // #nosec G115
 	b = append(b, KeyTypeRSA...)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(exp)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(exp))) // #nosec G115
 	b = append(b, exp...)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(nBytes)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(nBytes))) // #nosec G115
 	b = append(b, nBytes...)
 
 	return Identity{hash: sha256.Sum256(b)}
@@ -217,13 +220,13 @@ func ecdsaIdentity(key *ecdsa.PublicKey) Identity {
 	size := 4 + len(keyType) + 4 + len(curveName) + 4 + len(pointBytes)
 	b := make([]byte, 0, size)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(keyType)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(keyType))) // #nosec G115
 	b = append(b, keyType...)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(curveName)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(curveName))) // #nosec G115
 	b = append(b, curveName...)
 
-	b = binary.BigEndian.AppendUint32(b, uint32(len(pointBytes)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(pointBytes))) // #nosec G115
 	b = append(b, pointBytes...)
 
 	return Identity{hash: sha256.Sum256(b)}
