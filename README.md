@@ -1,3 +1,5 @@
+Maintained fork of [minio/mtls](https://github.com/minio/mtls). It applies security patches and maintenance fixes on top of upstream. Part of the [Dark Gravity](https://github.com/lgcorzo/rust_CACD_autonomous_factory) factory. License: Apache-2.0.
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/lgcorzo/mtls.svg)](https://pkg.go.dev/github.com/lgcorzo/mtls)
 [![CI](https://github.com/lgcorzo/mtls/actions/workflows/ci.yml/badge.svg)](https://github.com/lgcorzo/mtls/actions/workflows/ci.yml)
 
@@ -428,3 +430,10 @@ This repository is maintained as an essential component of the **Dark Gravity Fa
 | **Support Libraries & Utilities** | `lgcorzo/elf`, `lgcorzo/color`, `lgcorzo/cli`, `lgcorzo/filepath`, `lgcorzo/argon2`, `lgcorzo/bcrypto`, `lgcorzo/crypto`, `lgcorzo/xnet`, `lgcorzo/wildcard`, `lgcorzo/event` |
 
 ---
+
+---
+
+### Fork Maintenance & Agent Transparency
+
+- **Changes vs. Upstream:** Security dependency updates, CI/CD workflow fixes, and CodeQL remediation are tracked in the [commit history](https://github.com/lgcorzo/mtls/commits) and [Pull Requests](https://github.com/lgcorzo/mtls/pulls?q=is%3Apr).
+- **Agent Tagging (`[agent]`):** Commits and pull requests generated automatically by agents in the Dark Gravity pipeline are prefixed with `[agent]` to distinguish automated maintenance from manual work.
